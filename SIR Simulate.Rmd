@@ -1,0 +1,135 @@
+---
+title: "SIR Final Size"
+author: "Loc Huynh"
+date: '2023'
+output:
+  html_document:
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+SIR model 
+dS/dt = -beta SI
+dI/dt = beta SI - nu I
+dR/dt = nu I
+
+We're going to use "dynamic allocation" of data structures
+
+ODE question: for a given, N, beta, nu, I(0), what is the final epidemic size?
+
+MC question: for the same parameters, what is the expected final epidemic size? E(R)
+
+Numerical experiment question: What does the distribution of the final epidemic size look like? (Run lots of epidemics with identical parameters and report a histogram)
+
+#Solution of stochastic SIR
+```{r}
+#comment multiple lines: Crtl + Shift + C
+N = 1000 #S+I+R = 1000
+num_steps = 2*N
+betaN = 0.3 #beta*N*I = 50 means 50 infections per day 
+beta = betaN/N 
+nu = 0.2 #recovery time. The average is 1/nu. The average time is 50 days 
+R0 = betaN/nu
+
+#final_epidemic_size = c()
+#for (i in 1:num_epidemics) {
+# PLACE epidemic simulation here  
+#  final_epidemic_size = c(final_epidemic_size,max(R))
+#}
+#hist(final_epidemic_size)
+
+I = c()
+R = c()
+t = c()
+I = c(I,1) # concatenation
+R = c(R,0)
+t = c(t,0)
+n = 2
+current_R = c()
+current_R = c(current_R,beta*(N-I[n-1]-R[n-1])/nu)
+while(n <= num_steps & I[n-1] > 0 & R[n-1]>= 0){
+  infection_rate = beta*(N-I[n-1]-R[n-1])*I[n-1]
+  recovery_rate = nu*I[n-1]
+  tau = rexp(1, rate = infection_rate + recovery_rate)
+  current_R = c(current_R,beta*(N-I[n-1]-R[n-1])/nu)
+  if (runif(1) < infection_rate/(infection_rate + recovery_rate)){
+    I = c(I,I[n-1] + 1)
+    R = c(R,R[n-1])
+  } else {
+    I = c(I,I[n-1] - 1)
+    R = c(R,R[n-1] + 1)
+  }
+  t = c(t,t[n-1]+tau)
+  n = n + 1
+}
+S = N - I - R
+
+print(paste0("The basic reproduction number is ",R0))
+print(paste0("The final epidemic size is ",max(R)))
+
+
+
+# Opening the graphical device
+pdf("3stosircase22.pdf")
+#Plot them seperately
+#plot(t,S,type="s")
+#plot(t,I,type="s")
+#plot(t,R,type="s")
+
+#Plot them together
+plot(t,S,type="s", col = 1, xlab = "Time", ylab = "", 
+     xlim = c(0,max(t)), ylim= c(0,N))
+lines(t,I,col = 2)
+lines(t,R,col = 3)
+legend(x = "topright", c("I(t)", "R(t)","S(t)"), col = c(2, 3, 1), lty = 1)
+title("Plot of S(t), I(t) and R(t) ")
+
+# Closing the graphical device
+dev.off() 
+```
+#The deterministic solution of SIR model:
+```{r, message=FALSE, warning=FALSE}
+library(deSolve)
+
+deter_sir = function(time, y, parms){
+  I = y[1]
+  R = y[2]
+  my_beta = parms[1]
+  my_nu = parms[2]
+  pop = parms[3]
+  
+  return(list(c(
+    I = my_beta*I*(pop - I - R) - my_nu*I,
+    R = my_nu*I
+  )))
+}
+
+time = seq(from = 0, to = 200, length.out = 10000)
+
+sol = lsoda(
+  y = c(1, 0), #Initial I and R
+  parms = c(beta, nu, N),
+  times = time,
+  func = deter_sir
+)
+
+
+# Opening the graphical device
+pdf("3detsircase2.pdf")
+
+# Creating a plot
+plot(time, sol[, 2], type = "l", lwd = 2, 
+     col = 2, xlab = "time", ylab = "", xlim = c(0,200), ylim = c(0,1000))
+lines(time, sol[, 3], col = 3)
+lines(time, N-sol[,2]-sol[,3], col = 1)
+legend(x = "topright", c("I(t)", "R(t)","S(t)"), col = c(2, 3, 1), lty = 1)
+title("Plot of S(t), I(t) and R(t) ")
+
+# Closing the graphical device
+dev.off() 
+
+print(paste0("The final epidemic size is ",max(sol[,3])))
+
+```

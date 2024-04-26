@@ -1,0 +1,174 @@
+---
+title: "SIR_Augmentation"
+author: "Volodymyr Minin, Kari Auranen, Elizabeth Halloran"
+date: '2023'
+output:
+  html_document:
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  fig.path = "./figs/ex02-", results = "markup", error = FALSE, fig.width = 8,
+  fig.height = 4.5, size = "small", echo = TRUE, tidy = FALSE, message = FALSE,
+  fig.keep = "high", fig.align = "center", warning = FALSE
+)
+```
+
+```{r include=FALSE}
+options(width = 120)
+# Libraries
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(
+  tidyverse, gridExtra, pbapply, deSolve, RColorBrewer, rstan
+)
+```
+
+```{r}
+N <- 436126
+
+covid_US <- read.csv("data_US_LA_22051.csv") 
+
+my_data <- data.frame(IN = covid_US$new_confirmed, RN = covid_US$new_deceased)
+my_data$t <- 0:(nrow(my_data)-1)
+my_data$I <- rep(1, nrow(my_data))
+my_data$R <- rep(0,nrow(my_data))
+for (i in 2:nrow(my_data)){
+  new_recover = floor(my_data$I[i-1]*1/20)
+  my_data$RN[i] = my_data$RN[i] + new_recover
+  my_data$I[i] = my_data$I[i-1] + my_data$IN[i] - my_data$RN[i]
+  my_data$R[i] = my_data$R[i-1] + my_data$RN[i] 
+}
+my_data$S <- N - my_data$I - my_data$R
+```
+
+```{r}
+#pdf("4datasetCovidnewcases.pdf")
+plot(my_data$t[2:70], my_data$IN[2:70],
+  lwd = 2, type = "l", lty = 1,
+  ylab = "Number of new infections",
+  xlab = "Time", col = 2
+)
+title("Observed data")
+
+#dev.off()
+```
+
+```{r}
+#pdf("4datasetCovidprocess.pdf")
+plot(my_data$t[2:100], my_data$R[2:100],
+  lwd = 2, type = "l", lty = 1,
+  ylab = "Number of individuals",
+  xlab = "Time", col = 1
+)
+#lines(my_data$t, my_data$I, col = 2)
+#lines(my_data$t, my_data$R, col = 3)
+#legend(x = "topright", c("S(t)", "I(t)","R(t)"), col = c(1,2,3), lty = 1)
+title("Number of removal individuals")
+#dev.off()
+```
+
+```{r}
+#Start t, t =50 at first
+start = 0
+
+#data we have, from day start to start+days-1
+days = 50
+
+#Predicts 10 days after
+days_pred = 50
+
+#Number of interations
+iterations = 1000
+
+#Create a prediction table
+sm_pred <- data.frame(iter = 1:iterations)
+
+for (i in 1:(days+days_pred)){
+  column_name <- paste("IN", i, sep="")  # Dynamically create the column name
+  sm_pred[[column_name]] <- NA
+}
+
+for (i in 2:days){
+  sm_pred[,i] = rep(my_data$IN[start+i], times = iterations)
+}
+```
+
+```{r}
+pred_sim <- function(N, beta, gamma, S_init, I_init, days_pred){
+  result = c(NA)
+  S = S_init
+  I = I_init
+  for (i in 1: (days_pred+1)){
+    IN_new = rpois(1, lambda = S*I*beta/N)
+    RN_new = rpois(1, lambda = I*gamma)
+    S = S - IN_new
+    I = I + IN_new - RN_new
+    result = c(result, IN_new)
+  }
+  return(result[-1])
+}
+```
+
+```{r}
+# Posterior parameters
+a_beta = 0.01
+b_beta = 0.01
+
+a_gamma = 0.01
+b_gamma = 0.01
+
+#We know the data for 5 days
+#Update the parameters
+a_beta = a_beta + sum(my_data$IN[(start + 2):(start + days)]) 
+b_beta = b_beta + sum(my_data$S[(start + 1):(start + days-1)]*my_data$I[(start + 1):(start + days-1)]/N) 
+
+a_gamma = a_gamma + sum(my_data$RN[(start + 2):(start + days)]) 
+b_gamma = b_gamma + sum(my_data$I[(start + 1):(start + days-1)]) 
+
+```
+
+```{r}
+
+for (i in 1:iterations){
+  beta = rgamma(1, shape = a_beta, rate = b_beta)
+  gamma = 1/20
+  I_init = my_data$I[start+days]
+  S_init = my_data$S[start+days]
+  new_row = pred_sim(N, beta, gamma, S_init, I_init, days_pred)
+  sm_pred[i,(days+1):(days+days_pred+1)] = new_row
+}
+
+```
+
+```{r}
+summary <- data.frame(t = 1:(days+days_pred),
+                      cases = numeric(length(t)),
+                      IN_pred = numeric(length(t)),
+                      X5 = numeric(length(t)),
+                      X50 = numeric(length(t)),
+                      X95 = numeric(length(t)))
+
+for (i in 1:length(summary$t)){
+  summary$cases[i] = my_data$IN[start+i+1]
+  summary$IN_pred[i] = round(mean(sm_pred[,(i+1)], na.rm = TRUE),0)
+  summary$X5[i] = quantile(sm_pred[,i+1],0.05, na.rm = TRUE)
+  summary$X50[i] = quantile(sm_pred[,i+1],0.50, na.rm = TRUE)
+  summary$X95[i] = quantile(sm_pred[,i+1],0.95, na.rm = TRUE)
+} 
+```
+
+```{r}
+pdf("4datasetCovid_50days_50pred.pdf")
+#plot the histogram
+ggplot(summary, mapping = aes(x = t)) + 
+  geom_ribbon(aes(ymin = X5, ymax = X95), fill = "blue", alpha = 0.6) + 
+  geom_line(mapping = aes(x = t, y = IN_pred)) + 
+  geom_point(mapping = aes(y = cases)) + 
+  labs(x = "Days", y = "Number of new infected individuals") 
+
+```
+
+
+
+

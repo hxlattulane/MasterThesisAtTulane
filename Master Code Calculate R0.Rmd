@@ -1,0 +1,60 @@
+---
+title: "SIR_Augmentation"
+author: "Volodymyr Minin, Kari Auranen, Elizabeth Halloran"
+date: '2023'
+output:
+  html_document:
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  fig.path = "./figs/ex02-", results = "markup", error = FALSE, fig.width = 8,
+  fig.height = 4.5, size = "small", echo = TRUE, tidy = FALSE, message = FALSE,
+  fig.keep = "high", fig.align = "center", warning = FALSE
+)
+```
+
+```{r include=FALSE}
+options(width = 120)
+# Libraries
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(
+  tidyverse, gridExtra, pbapply, deSolve, RColorBrewer, rstan, data.frame
+)
+```
+
+```{r}
+#Beta prior hyperparameters
+a_beta = 6103.01
+b_beta = 72436.51
+
+#Gamma prior hyperparameters
+a_gamma = 173.01
+b_gamma = 2525.01
+```
+
+```{r}
+table <- data.frame(beta = rgamma(10000, shape = a_beta, rate = b_beta),
+                    gamma = 0.05)
+
+table$R0 <- table$beta/table$gamma
+
+c1 = quantile(table$R0, 0.05)
+c2 = quantile(table$R0, 0.95)
+summary(table$R0)
+```
+
+```{r}
+pdf("4datasetCovid_50days_R0.pdf")
+#plot the histogram
+ggplot(table, aes(x = R0)) +
+  geom_histogram(bins = 40, fill = "gray", color = "black") +
+  scale_x_continuous(limits = c(0.8, 1.8)) +
+  geom_vline(aes(xintercept = 1), col = "red", lwd = 0.1) +
+  labs(x = "R0", y = "Frequency")
+
+#dev.off()
+```
+
+

@@ -1,0 +1,116 @@
+---
+title: "SIR Final Size"
+author: "Loc Huynh"
+date: '2023'
+output:
+  html_document:
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+SIR model 
+dS/dt = -beta SI
+dI/dt = beta SI - nu I
+dR/dt = nu I
+
+We're going to use "dynamic allocation" of data structures
+
+ODE question: for a given, N, beta, nu, I(0), what is the final epidemic size?
+
+MC question: for the same parameters, what is the expected final epidemic size? E(R)
+
+Numerical experiment question: What does the distribution of the final epidemic size look like? (Run lots of epidemics with identical parameters and report a histogram)
+
+# The final size of the Stochastic SIR Model
+
+```{r}
+
+N = 1000 #S+I+R = 1000
+num_steps = 2*N
+betaN = 0.3 #beta*N*I = 50 means 50 infections per day 
+beta = betaN/N 
+nu = 0.2 #recovery time. The average is 1/nu. The average time is 50 days 
+R0 = betaN/nu
+
+num_epidemics = 1000 #how many time do you want it to run
+
+final_epidemic_size = c()
+for (i in 1:num_epidemics) {
+  I = c()
+  R = c()
+  t = c()
+  I = c(I,1) # concatenation
+  R = c(R,0)
+  t = c(t,0)
+  n = 2
+  while(n <= num_steps & I[n-1] > 0 & R[n-1]>= 0){
+    infection_rate = beta*(N-I[n-1]-R[n-1])*I[n-1]
+    recovery_rate = nu*I[n-1]
+    tau = rexp(1, rate = infection_rate + recovery_rate)
+    if (runif(1) < infection_rate/(infection_rate + recovery_rate)){
+      I = c(I,I[n-1] + 1)
+      R = c(R,R[n-1])
+    } else {
+      I = c(I,I[n-1] - 1)
+      R = c(R,R[n-1] + 1)
+    }
+    t = c(t,t[n-1]+tau)
+    n = n+1
+  }
+  final_epidemic_size = c(final_epidemic_size,max(R))
+}
+
+pdf("3stosircase4.pdf")
+
+h = hist(final_epidemic_size,
+     main = "Final epidemic size distribution",
+     xlab = "Final epidemic size",
+     freq = TRUE)
+
+dev.off() 
+
+long_idx = which(final_epidemic_size > 300) #return the indices of vec that satisfies
+
+print(paste0("The mean of the epidemic size is ",mean(final_epidemic_size)))
+
+print(paste0("The mean of the epidemic size is ",mean(final_epidemic_size[long_idx])))
+#vec[long_idx]: the value that associated with the index
+
+
+pdf("3stosircase42.pdf")
+
+h_approx = hist(final_epidemic_size[long_idx], 
+                 main = "Major Outbreak epidemic size distribution",
+                 xlab = "Final epidemic size")
+dev.off()
+```
+
+# Relationship between Final size of the epidemic in the determinstic solution and $R_0$
+```{r}
+R_0_vec = seq(from = 0, to = 5, length.out = 10000)
+final_size = function(R_0){
+  eqn = function(r_star){
+    1 - r_star - exp(-R_0 * r_star)
+  }
+  result1 = uniroot(eqn, lower = 0, upper = 1)$root
+  result2 = uniroot(eqn, lower = 1e-12, upper = 1, extendInt = "yes")$root
+  
+  result = max(result1, result2)
+  return(result)
+}
+
+final_vec = as.vector(10000)
+for (i in 1:10000){
+  R_0 = R_0_vec[i]
+  final_vec[i] <- final_size(R_0 = R_0)
+}
+pdf("2finalR0.pdf")
+
+plot(R_0_vec, final_vec, type = "s", xlab = "R_0", ylab = "Final epidemic size")
+
+dev.off()
+```
+
+
